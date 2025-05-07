@@ -26,9 +26,10 @@ annot_editor = Bio_RDF(LOCAL, MODEL_BASE)
 
 local_cytosol={'portionOfCytosol':{'term': 'FMA:66836','type': 'local'}}
 local_intercellular_matrix={'intercellular_matrix':{'term': 'FMA:9672','type': 'local'}}
+local_membrane={'membrane':{'term': 'GO:0005886','type': 'local'}}
 CA_PhysicalEntity(annot_editor, local_cytosol)
 CA_PhysicalEntity(annot_editor, local_intercellular_matrix)
-
+CA_PhysicalEntity(annot_editor, local_membrane)
 local_source_glucose={'glucose_out':{'type': 'local','term': 'CHEBI:4167', 'partOf': 'intercellular_matrix', 'hasProperty': [('GLUT2_BG.q_init_Ai','OPB:00425'),('GLUT2_BG.mu_Ai','OPB:00378')]}}
 local_sink_glucose ={'glucose_in':{'type': 'local','term': 'CHEBI:4167', 'partOf': 'portionOfCytosol', 'hasProperty': [('GLUT2_BG.q_init_Ao','OPB:00425'),('GLUT2_BG.mu_Ao','OPB:00378')]}}
 transporter={'facilitated_glucose_transporter':{'type': 'local','term': 'UniProt:P11168','partOf': 'membrane'}}
