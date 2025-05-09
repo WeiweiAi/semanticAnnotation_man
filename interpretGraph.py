@@ -650,11 +650,10 @@ def interpret_rdf_graph(rdf_graph_ttl, json_file_name=None):
                     physical_processes[process_node_id][role][participant_node_id]['stoichiometry'] = stoich
                 else:
                     physical_processes[process_node_id][role][participant_node_id]['stoichiometry'] = 1.0    
+    
     if local_entities is not None:
         for local_entity in local_entities:
-            if not find_properties(graph, local_entity):
-                node_id = get_last_uri_segment(local_entity)
-                physical_processes[node_id] = interpret_subgraph(graph, local_entity)
+            physical_processes[get_last_uri_segment(local_entity)] = interpret_subgraph(graph, local_entity)
 
     with open(json_file_name, 'w') as f:
         json.dump(physical_processes, f, indent=4)
@@ -680,6 +679,12 @@ if __name__ == "__main__":
     # Example usage
     #xml_file = "./MacKenzie_1996_rdf.xml"  # Replace with your XML file path
    # xml2ttl(xml_file)
-    rdf_graph_ttl = "./MacKenzie_1996_rdf.ttl"  # Replace with your RDF graph file path
+    rdf_graph_ttl = "./test/MacKenzie_1996_rdf.ttl"  # Replace with your RDF graph file path
+    interpret_rdf_graph(rdf_graph_ttl)
+    rdf_graph_ttl = "./test/GLUT2_BG.ttl"
+    interpret_rdf_graph(rdf_graph_ttl)
+    rdf_graph_ttl = "./test/GLUT2_rdf.ttl"
+    interpret_rdf_graph(rdf_graph_ttl)
+    rdf_graph_ttl = "./test/SGLT1_rdf.ttl"
     interpret_rdf_graph(rdf_graph_ttl)
     
