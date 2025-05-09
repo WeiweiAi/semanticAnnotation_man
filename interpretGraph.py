@@ -1,19 +1,17 @@
 from logging import warning
 import json
-import requests
 import rdflib
 from sentence_transformers import SentenceTransformer, util
 import re
-from collections import deque
 import urllib.parse
 import os
 from pathlib import PurePath
+import torch
 
 # Load model
 model = SentenceTransformer('all-MiniLM-L6-v2')
-api_key = "f3265618-0488-40a4-be60-848b7de89142" # BioPortal API key
 
-# Define templates for hybrid matching
+# Define templates for predicate matching
 ROLE_TEMPLATES = {
     "hasSinkParticipant": "has sink participant",
     "hasSourceParticipant": "has source participant",
@@ -40,13 +38,33 @@ PART_TEMPLATES = {
     "isPartOf": "is part of",
 }
 
-def get_last_url_segment(url): 
-    return urllib.parse.unquote(str(url)).split("/")[-1]
+COEFFICIENT_TEMPLATES = {
+    "hasMultiplier": "has multiplier",
+    "hasCoefficient": "has coefficient",
+}
 
-def last_url_segment_to_text(url):
-    # if there is # in the url, remove it and everything before it
-    text = get_last_url_segment(url)
+# Encode templates
+def encode_templates(template_dict):
+    return {k: model.encode(v, convert_to_tensor=True) for k, v in template_dict.items()}
+
+role_embeddings = encode_templates(ROLE_TEMPLATES)
+entity_embeddings = encode_templates(ENTITY_TEMPLATES)
+property_embeddings = encode_templates(PROPERTY_TEMPLATES)
+is_embeddings = encode_templates(IS_TEMPLATES)
+part_embeddings = encode_templates(PART_TEMPLATES)
+coefficient_embeddings = encode_templates(COEFFICIENT_TEMPLATES)
+
+def get_last_uri_segment(uri): 
+    return urllib.parse.unquote(str(uri)).split("/")[-1]
+
+def get_id(uri):
+    # if there is # in the uri, remove it and everything before it
+    return get_last_uri_segment(uri).split("#")[-1]
+
+def last_uri_segment_to_text(uri):
+    text = get_last_uri_segment(uri)
     # Insert space before each capital letter (except at start)
+    # if there is # in the uri, remove it and everything before it
     camel_to_text= re.sub(r'(?<!^)(?=[A-Z])', ' ', text.split("#")[-1])
     # Replace underscores and hyphens with spaces
     snake_to_text = camel_to_text.replace("_", " ").replace("-", " ").replace(":", " ")
@@ -55,43 +73,20 @@ def last_url_segment_to_text(url):
 
 def is_cellml_id(uri):
     # may need to be updated for more general cases
-    text = get_last_url_segment(uri)
-    if ".cellml#" in str(text) or ("#" in str(text) and '.' in str(text).split("#")[-1]):
-        return True
-    else: 
-        return False
+    text = get_last_uri_segment(uri)
+    return ".cellml#" in str(text) or ("#" in str(text) and '.' in str(text).split("#")[-1])    
 
 def is_ontology_term(uri):
     # may need to be updated for more general cases
     return "identifiers.org" in str(uri) 
 
 def is_local_entity(uri):
-    text = get_last_url_segment(uri)
-    if "#" in str(text) and not is_cellml_id(uri):
-        return True
-    else:
-        return False
+    text = get_last_uri_segment(uri)
+    return "#" in str(text) and not is_cellml_id(uri)
 
 def is_bg_entity(uri):
-    text = get_last_url_segment(uri)
-    if (".json#" in str(text)):
-        return True
-    else:
-        return False
-# Encode templates
-def encode_templates(template_dict):
-    return {k: model.encode(v) for k, v in template_dict.items()}
-
-role_embeddings = encode_templates(ROLE_TEMPLATES)
-entity_embeddings = encode_templates(ENTITY_TEMPLATES)
-property_embeddings = encode_templates(PROPERTY_TEMPLATES)
-is_embeddings = encode_templates(IS_TEMPLATES)
-part_embeddings = encode_templates(PART_TEMPLATES)
-
-# match two sentences using cosine similarity
-def match_sentences(s1, s2):
-    return util.cos_sim(model.encode(s1), model.encode(s2)).item()
-# Hybrid predicate matcher
+    text = get_last_uri_segment(uri)
+    return ".json#" in str(text)
 def match_predicate(pred, embeddings, threshold=0.55):
     """    
     Match a predicate to a role using cosine similarity.
@@ -100,9 +95,9 @@ def match_predicate(pred, embeddings, threshold=0.55):
     ----------
     pred : str
         The predicate to match.
-        embeddings : dict
+    embeddings : dict
         A dictionary of predicates and their embeddings.
-        threshold : float, optional
+    threshold : float, optional
         The threshold for matching. Default is 0.55.
         
     Returns
@@ -110,14 +105,44 @@ def match_predicate(pred, embeddings, threshold=0.55):
     str or None
         The matched role or None if no match is found.
     """
-    pred_text = last_url_segment_to_text(pred)
-    pred_emb = model.encode(pred_text)
-    best_match, best_score = None, -1
-    for role, emb in embeddings.items():
-        score = util.cos_sim(pred_emb, emb).item()
-        if score > best_score:
-            best_match, best_score = role, score
+    pred_emb = model.encode(last_uri_segment_to_text(pred), convert_to_tensor=True)
+    g_keys, g_embeddings = zip(*embeddings.items())
+    g_tensor = torch.stack(g_embeddings)  
+    cos_scores = util.pytorch_cos_sim(pred_emb, g_tensor)[0]
+    top_results = torch.topk(cos_scores, 1)
+    best_idx = top_results[1].tolist()[0]
+    best_score = top_results[0].tolist()[0]
+    best_match = g_keys[best_idx]
     return best_match if best_score >= threshold else None
+    
+def find_best_matches(target_embedding, embeddings, threshold=0.55, top_k=1):
+    """    
+    Find the best matches for a target embedding.
+    
+    Parameters
+    ----------
+    target_embedding : torch.Tensor
+        The target embedding.
+    embeddings : dict
+        A dictionary of embeddings.
+    threshold : float, optional
+        The threshold for matching. Default is 0.55.
+    top_k : int, optional
+        The number of top matches to return. Default is 1.
+        
+    Returns
+    -------
+    list or None
+        The matched keys of embeddings or None if no match is found.
+    """
+    g_keys, g_embeddings = zip(*embeddings.items())
+    g_tensor = torch.stack(g_embeddings)  
+    cos_scores = util.pytorch_cos_sim(target_embedding, g_tensor)[0]
+    top_results = torch.topk(cos_scores, top_k)
+    best_indices = top_results[1].tolist()[:top_k]
+    least_best_score = top_results[0].tolist()[:top_k][-1]
+    best_matches = [g_keys[idx] for idx in best_indices]
+    return best_matches if least_best_score >= threshold else None
 
 def find_local_entities(g):
     """
@@ -143,6 +168,56 @@ def find_local_entities(g):
         if is_local_entity(o):
             local_entities.add(resolve_entity(g, o))
     return local_entities if len(local_entities) > 0 else None
+
+def find_cellml_ids(g):
+    """
+    Find CellML IDs in the RDF graph.
+    
+    Notes: This function searches for subjects and objects that are CellML IDs.
+    
+    Parameters
+    ----------
+    g : rdflib.Graph
+        The RDF graph to search.
+    
+    Returns
+    -------
+    set or None
+        A set of CellML ID nodes if found, otherwise None.
+        
+    """
+    cellml_ids = set()
+    for s, p, o in g:
+        if is_cellml_id(s):
+            cellml_ids.add(s)
+        if is_cellml_id(o):
+            cellml_ids.add(o)
+    return cellml_ids if len(cellml_ids) > 0 else None
+
+def find_ontology_terms(g):
+    """
+    Find ontology terms in the RDF graph.
+    
+    Notes: This function searches for subjects and objects that are ontology terms.
+    
+    Parameters
+    ----------
+    g : rdflib.Graph
+        The RDF graph to search.
+    
+    Returns
+    -------
+    set or None
+        A set of ontology term nodes if found, otherwise None.
+        
+    """
+    ontology_terms = set()
+    for s, p, o in g:
+        if is_ontology_term(s):
+            ontology_terms.add(s)
+        if is_ontology_term(o):
+            ontology_terms.add(o)
+    return ontology_terms if len(ontology_terms) > 0 else None
 
 # Helper to find the physical process node (D-glucose transport)
 def find_physical_process(g):
@@ -248,9 +323,9 @@ def find_stoichiometry(g, participant_node):
         The stoichiometry of the participant if found, otherwise 1.0.
     """
     for s, p, o in g:
-        if str(p).endswith("hasMultiplier") and str(s) == str(participant_node):
+        if  match_predicate(str(p), coefficient_embeddings) and str(s) == str(participant_node):
             return float(o)
-        elif str(p).endswith("hasMultiplier") and resolve_entity(g, s) == participant_node:
+        elif match_predicate(str(p), coefficient_embeddings) and resolve_entity(g, s) == participant_node:
             return float(o) 
     return 1.0  # default stoichiometry
 
@@ -334,7 +409,7 @@ def find_properties(g, entity_node=None):
     Returns
     -------
     dict or None
-        A dictionary with CellML IDs as keys and ontology terms as values if found, otherwise None.
+        A dictionary with CellML IDs as keys and ontology terms (rdflib.URIRef) as values if found, otherwise None.
     """
     # Find properties of the entity node
     properties = {} # cellml_id: property
@@ -406,8 +481,8 @@ def find_cellmlID(g, node):
     
     Returns
     -------
-    str or None
-        The CellML ID if found, otherwise None.
+    rdflib.URIRef or None
+        The CellML ID node if found, otherwise None.
     """
     cellml_ids = []
     for s, p, o in g.triples((node, None, None)):
@@ -434,7 +509,8 @@ def find_ontology_term(g, meta_id):
     """
     Find the ontology term for a given meta_id in the RDF graph.
     
-    Notes: This function searches for triples with predicates semantically matching "is","is Version Of" and "has Version".
+    Notes: This function searches for triples with predicates semantically matching "is","is Version Of", 
+            'hasPhysicalDefinition' and "has Version".
             The depth-first search is performed in both directions (subject and object). The maximum depth is 1.
             The maximum number of ontology terms found is 1. TODO: may need to be updated for more general cases.
     
@@ -471,115 +547,6 @@ def find_ontology_term(g, meta_id):
         ontology_term = ontology_term[0] if ontology_term else None
     return ontology_term
 
-def extract_subgraph_from_node(graph, start_node, exclude_nodes=None):
-    """
-    Traverses RDF graph from start_node in both directions, stops at ontology terms.
-
-    Parameters:
-        graph: RDFLib Graph.
-        start_node: RDFLib URIRef or BNode.
-        exclude_nodes: set of nodes to exclude from traversal.
-
-    Returns:
-        RDFLib Graph: subgraph connected to the start_node.
-    """
-    visited = set()
-    queue = deque([start_node])
-    subgraph = rdflib.Graph()
-    exclude_nodes = exclude_nodes or set()
-
-    while queue:
-        node = queue.popleft()
-        if node in visited or node in exclude_nodes:
-            continue
-        visited.add(node)
-
-        # Forward traversal: node as subject
-        for s, p, o in graph.triples((node, None, None)):
-            subgraph.add((s, p, o))
-            if not is_ontology_term(o) and o not in exclude_nodes:
-                queue.append(o)
-
-        # Backward traversal: node as object
-        for s, p, o in graph.triples((None, None, node)):
-            if s not in exclude_nodes:
-                subgraph.add((s, p, o))
-                if not is_ontology_term(s):
-                    queue.append(s)
-
-    return subgraph
-
-def get_uniprot_info(uniprot_id: str) -> dict:
-    """Retrieve protein name and organism from UniProt ID.
-       # Example usage
-        info = get_uniprot_info("P11168")
-        print(info)
-    
-    """
-    url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}.json"
-    response = requests.get(url)
-    
-    if response.ok:
-        data = response.json()
-        protein_name = data.get("proteinDescription", {}).get("recommendedName", {}).get("fullName", {}).get("value")
-        organism = data.get("organism", {}).get("scientificName")
-        return {
-            "uniprot_id": uniprot_id,
-            "label": protein_name,
-            "organism": organism
-        }
-    else:
-        return {"error": f"Failed to retrieve data for {uniprot_id}"}
-
-import requests
-
-def lookup_bioportal_term(curie: str, api_key=api_key):
-    """
-    Perform a general BioPortal search for a given CURIE (e.g., 'GO:0055056').
-    print(lookup_bioportal_term("GO:0055056", api_key))
-    print(lookup_bioportal_term("CHEBI:4167", api_key))
-    print(lookup_bioportal_term("FMA:66836", api_key))
-    print(lookup_bioportal_term("OPB:00378", api_key))
-
-    Returns:
-        A dictionary with label, definition, synonyms, and ID if found.
-    """
-    if '_' in curie:
-        curie = curie.replace("_", ":")
-    url = "https://data.bioontology.org/search"
-    params = {
-        "q": curie,
-        "require_exact_match": "true"
-    }
-    headers = {
-        "Authorization": f"apikey token={api_key}"
-    }
-
-    response = requests.get(url, params=params, headers=headers)
-
-    if response.ok:
-        data = response.json()
-        if data.get("collection"):
-            entry = data["collection"][0]
-            return {
-                "label": entry.get("prefLabel", ""),
-                "definition": entry.get("definition", []),
-                "synonyms": entry.get("synonym", []),
-                "id": entry.get("@id", ""),
-                "ontology": entry.get("links", {}).get("ontology", "")
-            }
-        else:
-            return {"error": "No match found"}
-    else:
-        return {
-            "error": "Lookup failed",
-            "status_code": response.status_code,
-            "reason": response.reason,
-            "text": response.text
-        }
-
-# Example usage:
-
 def interpret_subgraph(graph, local_entity):
     """
     Interprets an RDF graph and returns a dictionary containing the extracted information.
@@ -596,49 +563,56 @@ def interpret_subgraph(graph, local_entity):
     
     """
     subgraph_info = {}
-    subgraph_info['label'] = ''
     what_entity = find_ontology_term(graph, local_entity)
     if what_entity is None:
         print(f"Cannot find an ontology term for {local_entity}")
     else:
-        if 'uniprot' in str(what_entity):
-            uniprot_id = get_last_url_segment(what_entity).split(":")[-1]
-            info = get_uniprot_info(uniprot_id)
-        else:
-            info = lookup_bioportal_term(get_last_url_segment(what_entity))
-        if 'error' in info:
-            print(f"Cannot find biological info for {local_entity}")
-        else:
-            subgraph_info['label'] = info['label']
-            properties = find_properties(graph, local_entity)
-            if properties:
-                subgraph_info['properties'] = {}
-                for cellml_id, prop in properties.items():
-                    physicsal_property = lookup_bioportal_term(get_last_url_segment(prop))
-                    if 'error' in physicsal_property:
-                         print(f"Cannot find physicsal property for {prop}")
-                         subgraph_info['properties'][get_last_url_segment(cellml_id)] = ''
-                    else:
-                        subgraph_info['properties'][get_last_url_segment(cellml_id)] = physicsal_property['label']
-            anatomical_parts= find_anatomical_part(graph, local_entity)
-            if anatomical_parts is None:
-                print(f"Cannot find anatomical part for {local_entity}")
-            else:
-                subgraph_info['anatomical_parts'] =[]
-                for anatomical_part in anatomical_parts:
-                    if 'uniprot' in str(anatomical_part):
-                        uniprot_id = get_last_url_segment(anatomical_part).split(":")[-1]
-                        info = get_uniprot_info(uniprot_id)
-                    else:
-                        info = lookup_bioportal_term(get_last_url_segment(anatomical_part))                                
-                    if 'error' in info:
-                        print(f"Cannot find anatomical part for {anatomical_part}")
-                        subgraph_info['anatomical_parts'].append('')
-                    else:
-                        subgraph_info['anatomical_parts'].append(info['label'])
+        subgraph_info['term'] = get_last_uri_segment(what_entity)
+    properties = find_properties(graph, local_entity)
+    if properties:
+        subgraph_info['properties'] = {}
+        for cellml_id, prop in properties.items():
+            subgraph_info['properties'][get_id(cellml_id)]={}
+            subgraph_info['properties'][get_id(cellml_id)]['term'] = get_last_uri_segment(prop)           
+    anatomical_parts= find_anatomical_part(graph, local_entity)
+    if anatomical_parts is None:
+        print(f"Cannot find anatomical part for {local_entity}")
+    else:
+        subgraph_info['anatomical_parts'] ={}
+        for anatomical_part in anatomical_parts:
+            subgraph_info['anatomical_parts'][get_last_uri_segment(anatomical_part)] = {}
+           
     return subgraph_info
 
-def interpret_rdf_graph(rdf_graph_ttl):
+def parse_ttl_file(rdf_graph_ttl, json_file_name=None):
+    """
+    Parses a Turtle file and returns the RDF graph.
+    
+    Parameters:
+        rdf_graph_ttl (str): The path to the Turtle file.
+    
+    Returns:
+        rdflib.Graph: The parsed RDF graph.
+    """
+    # Load the RDF graph
+    graph = rdflib.Graph()
+    if json_file_name is None:
+        json_file_name = PurePath(rdf_graph_ttl).name.split(".")[0] + ".json"
+    if os.path.isabs(rdf_graph_ttl):
+        graph.parse(rdf_graph_ttl, format='ttl')
+        # get the folder name using PurePath
+        file_path = PurePath(rdf_graph_ttl).parent
+    else:
+        # get the absolute path of the current file
+        full_path=os.path.join(os.path.dirname(__file__), rdf_graph_ttl)
+        graph.parse(full_path, format='ttl')
+        # get the folder name using PurePath
+        file_path = PurePath(full_path).parent
+    
+    json_file_name = os.path.join(file_path, json_file_name)
+    return graph, json_file_name
+
+def interpret_rdf_graph(rdf_graph_ttl, json_file_name=None):
     """
     Interprets an RDF graph and returns a dictionary containing the extracted information.
     
@@ -652,55 +626,40 @@ def interpret_rdf_graph(rdf_graph_ttl):
         Saves the extracted information to a JSON file in the same directory as the RDF graph.
     
     """
-    # Load the RDF graph
-    graph = rdflib.Graph()
-    json_file_name = PurePath(rdf_graph_ttl).name.split(".")[0] + ".json"
-    if os.path.isabs(rdf_graph_ttl):
-        graph.parse(rdf_graph_ttl, format='ttl')
-        # get the folder name using PurePath
-        file_path = PurePath(rdf_graph_ttl).parent
-    else:
-        # get the absolute path of the current file
-        full_path=os.path.join(os.path.dirname(__file__), rdf_graph_ttl)
-        graph.parse(full_path, format='ttl')
-        # get the folder name using PurePath
-        file_path = PurePath(full_path).parent
     
-    json_file_name = os.path.join(file_path, json_file_name)
-
+    graph, json_file_name = parse_ttl_file(rdf_graph_ttl, json_file_name)
     process_nodes = find_physical_process(graph)
     if process_nodes is None:
-        return None
+        print("No physical process found in the RDF graph.")
     local_entities = find_local_entities(graph)
     physical_processes = {}
     for process_node in process_nodes:
         real_entity = resolve_entity(graph, process_node)
-        process_node_id = get_last_url_segment(real_entity)
+        process_node_id = get_last_uri_segment(real_entity)
         physical_processes[process_node_id] = interpret_subgraph(graph, real_entity) 
         local_entities.discard(real_entity) # remove the process node from local entities              
         participants = find_participants(graph, process_node)
         for role in participants.keys():
             physical_processes[process_node_id][role] = {}
             for participant_node in participants[role]:                
-                participant_node_id = get_last_url_segment(participant_node)
+                participant_node_id = get_last_uri_segment(participant_node)
                 physical_processes[process_node_id][role][participant_node_id] =interpret_subgraph(graph, participant_node)
                 local_entities.discard(participant_node) # remove the process node from local entities
                 stoich = find_stoichiometry(graph, participant_node)
                 if stoich:
                     physical_processes[process_node_id][role][participant_node_id]['stoichiometry'] = stoich
                 else:
-                    physical_processes[process_node_id][role][participant_node_id]['stoichiometry'] = 1.0
-    
+                    physical_processes[process_node_id][role][participant_node_id]['stoichiometry'] = 1.0    
     if local_entities is not None:
         for local_entity in local_entities:
             if not find_properties(graph, local_entity):
-                node_id = get_last_url_segment(local_entity)
+                node_id = get_last_uri_segment(local_entity)
                 physical_processes[node_id] = interpret_subgraph(graph, local_entity)
 
     with open(json_file_name, 'w') as f:
         json.dump(physical_processes, f, indent=4)
     print(f"Extracted information saved to {json_file_name}") 
-    
+
 def xml2ttl(xml_file):
     """
     Convert an XML file to Turtle format and save it as a TTL file.
@@ -719,8 +678,8 @@ def xml2ttl(xml_file):
 
 if __name__ == "__main__":
     # Example usage
-    xml_file = "./MacKenzie_1996_rdf.xml"  # Replace with your XML file path
-    xml2ttl(xml_file)
+    #xml_file = "./MacKenzie_1996_rdf.xml"  # Replace with your XML file path
+   # xml2ttl(xml_file)
     rdf_graph_ttl = "./MacKenzie_1996_rdf.ttl"  # Replace with your RDF graph file path
     interpret_rdf_graph(rdf_graph_ttl)
     
