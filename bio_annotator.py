@@ -274,16 +274,25 @@ def CA_PhysicalProcess(bio_rdf, dict_physical_process):
             bio_rdf.add((model_subj, pred, ontology_obj))
         if 'source' in physical_process:
             for source in physical_process['source']:
-                source_obj = bio_rdf.localNode(source[0])
+                if source[0] == 'local':
+                    source_obj = bio_rdf.localNode(source[1])
+                elif source[0] == 'model':
+                    source_obj = bio_rdf.modelBaseNode(source[1])
                 bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasSourceParticipant'], source_obj))
-                bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasMultiplier'], bio_rdf.literalNode(str(source[1]), 'float')))
+                bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasMultiplier'], bio_rdf.literalNode(str(source[2]), 'float')))
         if 'sink' in physical_process:
             for sink in physical_process['sink']:
-                sink_obj = bio_rdf.localNode(sink[0])
+                if sink[0] == 'local':
+                    sink_obj = bio_rdf.localNode(sink[1])
+                elif sink[0] == 'model':
+                    sink_obj = bio_rdf.modelBaseNode(sink[1])
                 bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasSinkParticipant'], sink_obj))
-                bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasMultiplier'], bio_rdf.literalNode(str(sink[1]), 'float')))
+                bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasMultiplier'], bio_rdf.literalNode(str(sink[2]), 'float')))
         if 'mediator' in physical_process:
-            mediator_obj = bio_rdf.localNode(physical_process['mediator'])
+            if physical_process['mediator'][0] == 'local':
+                mediator_obj = bio_rdf.localNode(physical_process['mediator'][1])
+            elif physical_process['mediator'][0] == 'model':
+                mediator_obj = bio_rdf.modelBaseNode(physical_process['mediator'][1])
             bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasMediatorParticipant'], mediator_obj))
         if 'hasProperty' in physical_process:
             for prop in physical_process['hasProperty']:

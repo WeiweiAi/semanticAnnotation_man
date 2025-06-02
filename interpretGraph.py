@@ -82,7 +82,7 @@ def is_ontology_term(uri):
 
 def is_local_entity(uri):
     text = get_last_uri_segment(uri)
-    return "#" in str(text) and not is_cellml_id(uri)
+    return "#" in str(text) and not is_cellml_id(uri) and not is_bg_entity(uri)
 
 def is_bg_entity(uri):
     text = get_last_uri_segment(uri)
@@ -114,35 +114,6 @@ def match_predicate(pred, embeddings, threshold=0.55):
     best_score = top_results[0].tolist()[0]
     best_match = g_keys[best_idx]
     return best_match if best_score >= threshold else None
-    
-def find_best_matches(target_embedding, embeddings, threshold=0.55, top_k=1):
-    """    
-    Find the best matches for a target embedding.
-    
-    Parameters
-    ----------
-    target_embedding : torch.Tensor
-        The target embedding.
-    embeddings : dict
-        A dictionary of embeddings.
-    threshold : float, optional
-        The threshold for matching. Default is 0.55.
-    top_k : int, optional
-        The number of top matches to return. Default is 1.
-        
-    Returns
-    -------
-    list or None
-        The matched keys of embeddings or None if no match is found.
-    """
-    g_keys, g_embeddings = zip(*embeddings.items())
-    g_tensor = torch.stack(g_embeddings)  
-    cos_scores = util.pytorch_cos_sim(target_embedding, g_tensor)[0]
-    top_results = torch.topk(cos_scores, top_k)
-    best_indices = top_results[1].tolist()[:top_k]
-    least_best_score = top_results[0].tolist()[:top_k][-1]
-    best_matches = [g_keys[idx] for idx in best_indices]
-    return best_matches if least_best_score >= threshold else None
 
 def find_local_entities(g):
     """
@@ -304,6 +275,33 @@ def resolve_entity(g, temp_node):
             return o
     return temp_node  
 
+def find_localReferences(g, local_entity):
+    """
+    Find the local reference of a local entity in the RDF graph.
+    
+    Notes: This function searches for subjects that have a predicate semantically matching "has Physical Entity Reference".
+    
+    Parameters
+    ----------
+    g : rdflib.Graph
+        The RDF graph to search.
+    local_entity : rdflib.URIRef
+        The local entity to find the local reference for.
+    
+    Returns
+    -------
+    rdflib.URIRef or None
+        The local reference node if found, otherwise None.
+    """
+    localReferences= set()
+    for s, p, o in g.triples((None, None, local_entity)):
+        role = match_predicate(str(p), entity_embeddings)
+        if role:
+            localReferences.add(s)
+    if len(localReferences) > 0:
+        return localReferences
+    return None
+
 # Find stoichiometry
 def find_stoichiometry(g, participant_node):
     """
@@ -417,50 +415,115 @@ def find_properties(g, entity_node=None):
         for s, p, o in g.triples((None, None, entity_node)):
             prop_role = match_predicate(str(p), property_embeddings)
             if prop_role == "isPropertyOf" :        
-                if is_cellml_id(s):
+                if is_cellml_id(s) or is_bg_entity(s): # s is the property as a cellml or bg id
                     properties[s] = find_ontology_term(g, s)
-                elif is_ontology_term(s) :
+                elif is_ontology_term(s) : # s is the property as an ontology term; need to resolve it to cellml or bg id
                     cellml_id= find_cellmlID(g, s)
-                    properties[cellml_id] = s
-                elif is_local_entity(s): # if the property is a local entity, resolve it to its ontology term
+                    if cellml_id is not None:                       
+                        properties[cellml_id] = s
+                    else:
+                        bg_id=find_bgID(g, s)
+                        if bg_id is not None:
+                            properties[bg_id] = s
+                        elif is_bg_entity(o):
+                             num_properties = len(properties)                                
+                             properties[o+'_prop_'+str(num_properties)] = s
+                elif is_local_entity(s): # if the property is a local entity, resolve it to its ontology term and find its cellml or bg id
                     cellml_id= find_cellmlID(g, s)
                     if cellml_id is not None:
                         properties[cellml_id] = find_ontology_term(g, s)
+                    elif is_bg_entity(s):
+                        bg_id=find_bgID(g, s)
+                        if bg_id is not None:
+                            properties[bg_id] = find_ontology_term(g, s)
+                else:
+                   if is_bg_entity(o):
+                       num_properties = len(properties)
+                       properties[o+'_prop_'+str(num_properties)] = find_ontology_term(g, s)                           
+
         for s, p, o in g.triples((entity_node, None, None)):
             prop_role = match_predicate(str(p), property_embeddings)
             if prop_role == "hasProperty":
-                if is_cellml_id(o):
+                if is_cellml_id(o) or is_bg_entity(o):
                     properties[o] = find_ontology_term(g, o)
                 elif is_ontology_term(o):
                     cellml_id= find_cellmlID(g, o)
-                    properties[cellml_id] = o  
+                    if cellml_id is not None:
+                        properties[cellml_id] = o 
+                    else:
+                        bg_id=find_bgID(g, o)
+                        if bg_id is not None:
+                            properties[bg_id] = o
+                        elif is_bg_entity(s):# 
+                             num_properties = len(properties)
+                             properties[s+'_prop_'+str(num_properties)] = o
                 elif is_local_entity(o):
                     cellml_id= find_cellmlID(g, o)
                     if cellml_id is not None:
                         properties[cellml_id] = find_ontology_term(g, o)
+                    else:
+                        bg_id=find_bgID(g, o)
+                        if bg_id is not None:
+                            properties[bg_id] = find_ontology_term(g, o)
+                elif is_bg_entity(s):# 
+                    num_properties = len(properties)
+                    properties[s+'_prop_'+str(num_properties)] = find_ontology_term(g, o)
+                        
     else:
         for s, p, o in g:
             prop_role = match_predicate(str(p), property_embeddings)
             if prop_role == "isPropertyOf" :        
-                if is_cellml_id(s):
+                if is_cellml_id(s) or is_bg_entity(s):
                     properties[s] = find_ontology_term(g, s)
                 elif is_ontology_term(s) :
                     cellml_id= find_cellmlID(g, s)
-                    properties[cellml_id] = s
+                    if cellml_id is not None:                       
+                        properties[cellml_id] = s
+                    else:
+                        bg_id=find_bgID(g, s)
+                        if bg_id is not None:
+                            properties[bg_id] = s
+                        elif is_bg_entity(o):
+                           num_properties = len(properties)
+                           properties[o+'_prop_'+str(num_properties)] = s
                 elif is_local_entity(s):
                     cellml_id= find_cellmlID(g, s)
                     if cellml_id is not None:
                         properties[cellml_id] = find_ontology_term(g, s)
+                    else:
+                        bg_id=find_bgID(g, s)
+                        if bg_id is not None:
+                            properties[bg_id] = find_ontology_term(g, s)
+                else:
+                   if is_bg_entity(o):
+                       num_properties = len(properties)
+                       properties[o+'_prop_'+str(num_properties)] = find_ontology_term(g, s)
+
             if prop_role == "hasProperty":
-                if is_cellml_id(o):
+                if is_cellml_id(o) or is_bg_entity(o):
                     properties[o] = find_ontology_term(g, o)
                 elif is_ontology_term(o):
                     cellml_id= find_cellmlID(g, o)
-                    properties[cellml_id] = o
+                    if cellml_id is not None:
+                        properties[cellml_id] = o
+                    else:
+                        bg_id=find_bgID(g, o)
+                        if bg_id is not None:
+                            properties[bg_id] = o
+                        elif is_bg_entity(s):
+                            num_properties = len(properties)
+                            properties[s+'_prop_'+str(num_properties)] = o
                 elif is_local_entity(o):
                     cellml_id= find_cellmlID(g, o)
                     if cellml_id is not None:
                         properties[cellml_id] = find_ontology_term(g, o)
+                    else:
+                        bg_id=find_bgID(g, o)
+                        if bg_id is not None:
+                            properties[bg_id] = find_ontology_term(g, o)
+                elif is_bg_entity(s):
+                    num_properties = len(properties)
+                    properties[s+'_prop_'+str(num_properties)] = find_ontology_term(g, o)
                   
     return properties if len(properties) > 0 else None
 
@@ -504,6 +567,47 @@ def find_cellmlID(g, node):
     else:
         cellml_ids = cellml_ids[0] if cellml_ids else None
     return cellml_ids
+
+def find_bgID(g, node):
+    """
+    Find the BG ID of a node in the RDF graph.
+    
+    Notes: This function searches for triples with predicates semantically matching "is", "is Version Of", and "has Version".
+           The depth-first search is performed in both directions (subject and object).
+           The maximum number of BG IDs found is 1.
+    
+    Parameters
+    ----------
+    g : rdflib.Graph
+        The RDF graph to search.
+    node : rdflib.URIRef
+        The node to find BG ID for.
+    
+    Returns
+    -------
+    rdflib.URIRef or None
+        The BG ID node if found, otherwise None.
+    """
+    bg_ids = []
+    for s, p, o in g.triples((node, None, None)):
+        prop_role = match_predicate(str(p), is_embeddings)
+        if prop_role in ["is", "hasVersion"]:
+            if is_bg_entity(o):
+                bg_ids.append(o)
+            else:
+                warning(f"Cannot find a BG ID for {node}")
+    for s, p, o in g.triples((None, None, node)):
+        prop_role = match_predicate(str(p), is_embeddings)
+        if prop_role in ["is","isVersionOf",'isComputationalComponentFor']:
+            if is_bg_entity(s):
+                bg_ids.append(s)
+            else:
+                warning(f"Cannot find a BG ID for {node}")
+    if len(bg_ids) > 1:
+        raise Exception(f"Multiple BG IDs found for {node}")
+    else:
+        bg_ids = bg_ids[0] if bg_ids else None
+    return bg_ids
 
 def find_ontology_term(g, meta_id):
     """
@@ -680,11 +784,11 @@ if __name__ == "__main__":
     #xml_file = "./MacKenzie_1996_rdf.xml"  # Replace with your XML file path
    # xml2ttl(xml_file)
     rdf_graph_ttl = "./test/MacKenzie_1996_rdf.ttl"  # Replace with your RDF graph file path
-    interpret_rdf_graph(rdf_graph_ttl)
+ #   interpret_rdf_graph(rdf_graph_ttl)
     rdf_graph_ttl = "./test/GLUT2_BG.ttl"
-    interpret_rdf_graph(rdf_graph_ttl)
+#    interpret_rdf_graph(rdf_graph_ttl)
     rdf_graph_ttl = "./test/GLUT2_rdf.ttl"
-    interpret_rdf_graph(rdf_graph_ttl)
-    rdf_graph_ttl = "./test/SGLT1_rdf.ttl"
+#    interpret_rdf_graph(rdf_graph_ttl)
+    rdf_graph_ttl = "./test/GLUT2_BG_bg.ttl"
     interpret_rdf_graph(rdf_graph_ttl)
     
