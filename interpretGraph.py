@@ -5,7 +5,7 @@ from sentence_transformers import SentenceTransformer, util
 import re
 import urllib.parse
 import os
-from pathlib import PurePath
+from pathlib import PurePath, Path
 import torch
 
 # Load model
@@ -684,7 +684,8 @@ def interpret_subgraph(graph, local_entity):
     else:
         subgraph_info['anatomical_parts'] ={}
         for anatomical_part in anatomical_parts:
-            subgraph_info['anatomical_parts'][get_last_uri_segment(anatomical_part)] = {}
+            subgraph_info['anatomical_parts'][get_last_uri_segment(anatomical_part)]={}
+            subgraph_info['anatomical_parts'][get_last_uri_segment(anatomical_part)]['term'] = get_last_uri_segment(anatomical_part)
            
     return subgraph_info
 
@@ -709,7 +710,14 @@ def parse_ttl_file(rdf_graph_ttl, json_file_name=None):
     else:
         # get the absolute path of the current file
         full_path=os.path.join(os.path.dirname(__file__), rdf_graph_ttl)
-        graph.parse(full_path, format='ttl')
+        print("Parsing RDF file:", full_path)
+        if not os.path.exists(full_path):
+            raise FileNotFoundError(f"File does not exist: {full_path}")
+        try:
+            graph.parse(full_path, format='ttl')
+        except Exception as e:
+            print("Failed to parse RDF:", e)
+            raise
         # get the folder name using PurePath
         file_path = PurePath(full_path).parent
     
@@ -732,6 +740,19 @@ def interpret_rdf_graph(rdf_graph_ttl, json_file_name=None):
     """
     
     graph, json_file_name = parse_ttl_file(rdf_graph_ttl, json_file_name)
+    # Retrieve the namespace of the model based on the prefix 'model_base'
+    model_namespace = graph.namespace_manager.store.namespace('model_base')
+    if model_namespace is None:
+        print("No model_base namespace found in the RDF graph.")
+        dict_info={'model_base': ''}
+    else:
+        model_namespace_str = str(model_namespace)
+        # If it's a local path, convert to file URL
+        if os.path.exists(model_namespace_str):
+            model_full_path = Path(model_namespace_str).absolute().as_uri()
+        else:
+            model_full_path = model_namespace_str
+        dict_info={'model_base': model_full_path}    
     process_nodes = find_physical_process(graph)
     if process_nodes is None:
         print("No physical process found in the RDF graph.")
@@ -755,12 +776,16 @@ def interpret_rdf_graph(rdf_graph_ttl, json_file_name=None):
                 else:
                     physical_processes[process_node_id][role][participant_node_id]['stoichiometry'] = 1.0    
     
+    if len(physical_processes)>0:
+        dict_info['physical_processes'] = physical_processes
     if local_entities is not None:
+        dict_info['local_entities'] = {}
         for local_entity in local_entities:
-            physical_processes[get_last_uri_segment(local_entity)] = interpret_subgraph(graph, local_entity)
+            dict_info['local_entities'][get_last_uri_segment(local_entity)] = interpret_subgraph(graph, local_entity)
+    
 
     with open(json_file_name, 'w') as f:
-        json.dump(physical_processes, f, indent=4)
+        json.dump(dict_info, f, indent=4)
     print(f"Extracted information saved to {json_file_name}") 
 
 def xml2ttl(xml_file):
@@ -786,9 +811,9 @@ if __name__ == "__main__":
     rdf_graph_ttl = "./test/MacKenzie_1996_rdf.ttl"  # Replace with your RDF graph file path
  #   interpret_rdf_graph(rdf_graph_ttl)
     rdf_graph_ttl = "./test/GLUT2_BG.ttl"
-#    interpret_rdf_graph(rdf_graph_ttl)
-    rdf_graph_ttl = "./test/GLUT2_rdf.ttl"
-#    interpret_rdf_graph(rdf_graph_ttl)
-    rdf_graph_ttl = "./test/GLUT2_BG_bg.ttl"
+    interpret_rdf_graph(rdf_graph_ttl)
+    rdf_graph_ttl = "./test/SGLT1_BG.ttl"
+    interpret_rdf_graph(rdf_graph_ttl)
+    rdf_graph_ttl = "./test/compose_BG.ttl"
     interpret_rdf_graph(rdf_graph_ttl)
     

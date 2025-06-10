@@ -279,7 +279,7 @@ def CA_PhysicalProcess(bio_rdf, dict_physical_process):
                 elif source[0] == 'model':
                     source_obj = bio_rdf.modelBaseNode(source[1])
                 bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasSourceParticipant'], source_obj))
-                bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasMultiplier'], bio_rdf.literalNode(str(source[2]), 'float')))
+                bio_rdf.add((source_obj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasMultiplier'], bio_rdf.literalNode(str(source[2]), 'float')))
         if 'sink' in physical_process:
             for sink in physical_process['sink']:
                 if sink[0] == 'local':
@@ -287,7 +287,7 @@ def CA_PhysicalProcess(bio_rdf, dict_physical_process):
                 elif sink[0] == 'model':
                     sink_obj = bio_rdf.modelBaseNode(sink[1])
                 bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasSinkParticipant'], sink_obj))
-                bio_rdf.add((model_subj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasMultiplier'], bio_rdf.literalNode(str(sink[2]), 'float')))
+                bio_rdf.add((sink_obj, bio_rdf.prefix_NAMESPACE['bqbiol']['hasMultiplier'], bio_rdf.literalNode(str(sink[2]), 'float')))
         if 'mediator' in physical_process:
             if physical_process['mediator'][0] == 'local':
                 mediator_obj = bio_rdf.localNode(physical_process['mediator'][1])

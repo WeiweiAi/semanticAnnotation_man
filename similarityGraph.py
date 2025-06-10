@@ -5,23 +5,15 @@ import torch
 import rdflib
 from tqdm import tqdm
 
-import fineTune
-
-
 BIOBERT = 'FremyCompany/BioLORD-2023' # this model accommodate semantic textual similarity
 device = 'gpu' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
 
 biobert_model = SentenceTransformer(BIOBERT, device=device)
-scincl = SentenceTransformer("malteos/scincl")
-largemodel = SentenceTransformer('sentence-t5-large')
-fineTune_model = SentenceTransformer('output/combine-qualifiers-model', device=device)
 
 # calculate embeddings for each predicate and object
 
-
 def get_embeddings(g):
     embeddings = {}
-
     def get_subject_embedding(s):
         s_embeddings = []
         for p, o in g.predicate_objects(subject=s):
