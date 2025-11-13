@@ -1,0 +1,67 @@
+@prefix bqbiol: <http://biomodels.net/biology-qualifiers/> .
+@prefix chebi: <http://identifiers.org/CHEBI:> .
+@prefix fma: <http://identifiers.org/FMA:> .
+@prefix go: <http://identifiers.org/GO:> .
+@prefix local: <./SGLT1_BG.ttl#> .
+@prefix model_base: <./SGLT1_BG.cellml#> .
+@prefix opb: <http://identifiers.org/opb:> .
+@prefix uniprot: <http://identifiers.org/uniprot:> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+model_base:SGLT1_BG.mu_Glci bqbiol:isPropertyOf local:glucose_in ;
+    bqbiol:isVersionOf opb:00378 .
+
+model_base:SGLT1_BG.mu_Glco bqbiol:isPropertyOf local:glucose_out ;
+    bqbiol:isVersionOf opb:00378 .
+
+model_base:SGLT1_BG.mu_Nai bqbiol:isPropertyOf local:Na_in ;
+    bqbiol:isVersionOf opb:00378 .
+
+model_base:SGLT1_BG.mu_Nao bqbiol:isPropertyOf local:Na_out ;
+    bqbiol:isVersionOf opb:00378 .
+
+model_base:SGLT1_BG.q_Glci bqbiol:isPropertyOf local:glucose_in ;
+    bqbiol:isVersionOf opb:00425 .
+
+model_base:SGLT1_BG.q_Glco bqbiol:isPropertyOf local:glucose_out ;
+    bqbiol:isVersionOf opb:00425 .
+
+model_base:SGLT1_BG.q_Nai bqbiol:isPropertyOf local:Na_in ;
+    bqbiol:isVersionOf opb:00425 .
+
+model_base:SGLT1_BG.q_Nao bqbiol:isPropertyOf local:Na_out ;
+    bqbiol:isVersionOf opb:00425 .
+
+model_base:SGLT1_BG.v_r2 bqbiol:isPropertyOf local:D-glucose_sodium_symporter_activity ;
+    bqbiol:isVersionOf opb:00592 .
+
+local:D-glucose_sodium_symporter_activity bqbiol:hasMediatorParticipant local:Sodium_glucose_cotransporter_1 ;
+    bqbiol:hasSinkParticipant local:Na_in,
+        local:glucose_in ;
+    bqbiol:hasSourceParticipant local:Na_out,
+        local:glucose_out ;
+    bqbiol:is go:0005412 .
+
+local:Sodium_glucose_cotransporter_1 bqbiol:is uniprot:P13866 ;
+    bqbiol:isPartOf local:membrane .
+
+local:intercellular_matrix bqbiol:is fma:9672 .
+
+local:portionOfCytosol bqbiol:is fma:66836 .
+
+local:Na_in bqbiol:hasMultiplier "2.0"^^xsd:float ;
+    bqbiol:is chebi:29101 ;
+    bqbiol:isPartOf local:portionOfCytosol .
+
+local:Na_out bqbiol:hasMultiplier "2.0"^^xsd:float ;
+    bqbiol:is chebi:29101 ;
+    bqbiol:isPartOf local:intercellular_matrix .
+
+local:glucose_in bqbiol:hasMultiplier "1.0"^^xsd:float ;
+    bqbiol:is chebi:4167 ;
+    bqbiol:isPartOf local:portionOfCytosol .
+
+local:glucose_out bqbiol:hasMultiplier "1.0"^^xsd:float ;
+    bqbiol:is chebi:4167 ;
+    bqbiol:isPartOf local:intercellular_matrix .
+
