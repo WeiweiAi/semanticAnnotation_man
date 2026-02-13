@@ -1,0 +1,58 @@
+<model xmlns="http://www.cellml.org/cellml/2.0#" xmlns:cellml="http://www.cellml.org/cellml/2.0#" xmlns:xlink="http://www.w3.org/1999/xlink" name="params_BG">
+    <import xlink:href="./units.cellml">
+        <units name="fmol_per_s" units_ref="fmol_per_s"/>
+        <units name="J_per_K_mol" units_ref="J_per_K_mol"/>
+        <units name="per_fmol" units_ref="per_fmol"/>
+        <units name="fmol" units_ref="fmol"/>
+        <units name="per_s" units_ref="per_s"/>
+        <units name="pL" units_ref="pL"/>
+        <units name="uM" units_ref="uM"/>
+        <units name="mM" units_ref="mM"/>
+    </import>
+    <component name="params_BG">
+        <variable initial_value="8.31" name="R" units="J_per_K_mol" interface="public"/>
+        <variable initial_value="273.15" name="T" units="kelvin" interface="public"/>
+        <variable initial_value="149.65" name="K_Ai" units="per_fmol" interface="public"/>
+        <variable name="q_init_Ai" units="fmol" interface="public"/>
+        <variable initial_value="149.65" name="K_Ao" units="per_fmol" interface="public"/>
+        <variable name="q_init_Ao" units="fmol" interface="public"/>
+        <variable initial_value="33.20" name="K_1" units="per_fmol" interface="public"/>
+        <variable initial_value="0.0017" name="q_init_1" units="fmol" interface="public"/>
+        <variable initial_value="4.25e+03" name="K_2" units="per_fmol" interface="public"/>
+        <variable initial_value="0.0017" name="q_init_2" units="fmol" interface="public"/>
+        <variable initial_value="344.59" name="K_3" units="per_fmol" interface="public"/>
+        <variable initial_value="0.0017" name="q_init_3" units="fmol" interface="public"/>
+        <variable initial_value="1.99" name="K_4" units="per_fmol" interface="public"/>
+        <variable initial_value="0.0017" name="q_init_4" units="fmol" interface="public"/>
+        <variable initial_value="0.36" name="kappa_r1" units="fmol_per_s" interface="public"/>
+        <variable initial_value="0.26" name="kappa_r2" units="fmol_per_s" interface="public"/>
+        <variable initial_value="1.01e+05" name="kappa_r3" units="fmol_per_s" interface="public"/>
+        <variable initial_value="1.01e+04" name="kappa_r4" units="fmol_per_s" interface="public"/>
+        <variable initial_value="0.09" name="V_i" units="pL"/>
+        <!-- the intracelluar glucose concentration-->
+        <variable initial_value="10" name="g_i" units="mM"/>
+        <!-- the intracelluar glucose concentration-->
+        <variable initial_value="1e-5" name="g_o" units="mM"/>
+        <variable initial_value="0.09" name="V_o" units="pL" interface="public"/>
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+                <eq/>
+                <ci>q_init_Ao</ci>
+                <apply>
+                    <times/>
+                    <ci>g_o</ci>
+                    <ci>V_o</ci>
+                </apply>
+            </apply>
+            <apply>
+                <eq/>
+                <ci>q_init_Ai</ci>
+                <apply>
+                    <times/>
+                    <ci>g_i</ci>
+                    <ci>V_i</ci>
+                </apply>
+            </apply>
+        </math>
+    </component>
+</model>

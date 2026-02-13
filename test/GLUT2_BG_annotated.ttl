@@ -1,0 +1,47 @@
+@prefix bqbiol: <http://biomodels.net/biology-qualifiers/> .
+@prefix chebi: <http://identifiers.org/CHEBI:> .
+@prefix fma: <http://identifiers.org/FMA:> .
+@prefix go: <http://identifiers.org/GO:> .
+@prefix local: <./GLUT2_BG_annotated.ttl#> .
+@prefix model_base: <./GLUT2_BG_annotated.cellml#> .
+@prefix opb: <http://identifiers.org/opb:> .
+@prefix uniprot: <http://identifiers.org/uniprot:> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+model_base:b4da88 bqbiol:isPropertyOf local:glucose_in ;
+    bqbiol:isVersionOf opb:00425 .
+
+model_base:b4da8a bqbiol:isPropertyOf local:glucose_out ;
+    bqbiol:isVersionOf opb:00425 .
+
+model_base:b4da97 bqbiol:isPropertyOf local:glucose_in ;
+    bqbiol:isVersionOf opb:00378 .
+
+model_base:b4da98 bqbiol:isPropertyOf local:D_glucose_transmembrane_transporter_activity ;
+    bqbiol:isVersionOf opb:00592 .
+
+model_base:b4da99 bqbiol:isPropertyOf local:glucose_out ;
+    bqbiol:isVersionOf opb:00378 .
+
+local:D_glucose_transmembrane_transporter_activity bqbiol:hasMediatorParticipant local:facilitated_glucose_transporter ;
+    bqbiol:hasSinkParticipant local:glucose_in ;
+    bqbiol:hasSourceParticipant local:glucose_out ;
+    bqbiol:is go:0055056 .
+
+local:facilitated_glucose_transporter bqbiol:is uniprot:P11168 ;
+    bqbiol:isPartOf local:membrane .
+
+local:intercellular_matrix bqbiol:is fma:9672 .
+
+local:membrane bqbiol:is go:0005886 .
+
+local:portionOfCytosol bqbiol:is fma:66836 .
+
+local:glucose_in bqbiol:hasMultiplier "1.0"^^xsd:float ;
+    bqbiol:is chebi:4167 ;
+    bqbiol:isPartOf local:portionOfCytosol .
+
+local:glucose_out bqbiol:hasMultiplier "1.0"^^xsd:float ;
+    bqbiol:is chebi:4167 ;
+    bqbiol:isPartOf local:intercellular_matrix .
+
